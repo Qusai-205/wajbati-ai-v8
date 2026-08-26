@@ -24,37 +24,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Stabilize customer cancellation controls
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('app.js')
-          s=p.read_text(encoding='utf-8')
-          marker='/* WAJBATI_STABLE_TRACKING_V11 */'
-          if marker not in s:
-              s += r'''
-
-/* WAJBATI_STABLE_TRACKING_V11 */
-let _wajbatiTrackingSignature='';
-const _wajbatiOrderSignature=o=>o?`${o.id||''}|${o.status||''}|${o.cancellationReason||''}|${o.cancelledAt||''}`:'';
-const _wajbatiPaintTrackingStable=paintTracking;
-paintTracking=function(o){
-  _wajbatiPaintTrackingStable(o);
-  _wajbatiTrackingSignature=_wajbatiOrderSignature(o);
-};
-tracking=async function(){
-  if(!currentOrderId){if(_wajbatiTrackingSignature!=='')paintTracking(null);return;}
-  if(trackingBusy)return;
-  trackingBusy=true;
-  try{
-    const j=await apiGet('order',{id:currentOrderId});
-    const sig=_wajbatiOrderSignature(j.order);
-    if(sig!==_wajbatiTrackingSignature)paintTracking(j.order);
-  }catch{}finally{trackingBusy=false}
-};
-'''
-              p.write_text(s,encoding='utf-8')
-          PY
-          node --check app.js
+        run: python -c "import base64,pathlib; p=pathlib.Path('app.js'); s=p.read_text(encoding='utf-8'); m='/* WAJBATI_STABLE_TRACKING_V11 */'; patch=base64.b64decode('CgovKiBXQUpCQVRJX1NUQUJMRV9UUkFDS0lOR19WMTEgKi8KbGV0IF93YWpiYXRpVHJhY2tpbmdTaWduYXR1cmU9Jyc7CmNvbnN0IF93YWpiYXRpT3JkZXJTaWduYXR1cmU9bz0+bz9gJHtvLmlkfHwnJ318JHtvLnN0YXR1c3x8Jyd9fCR7by5jYW5jZWxsYXRpb25SZWFzb258fCcnfXwke28uY2FuY2VsbGVkQXR8fCcnfWA6Jyc7CmNvbnN0IF93YWpiYXRpUGFpbnRUcmFja2luZ1N0YWJsZT1wYWludFRyYWNraW5nOwpwYWludFRyYWNraW5nPWZ1bmN0aW9uKG8pewogIF93YWpiYXRpUGFpbnRUcmFja2luZ1N0YWJsZShvKTsKICBfd2FqYmF0aVRyYWNraW5nU2lnbmF0dXJlPV93YWpiYXRpT3JkZXJTaWduYXR1cmUobyk7Cn07CnRyYWNraW5nPWFzeW5jIGZ1bmN0aW9uKCl7CiAgaWYoIWN1cnJlbnRPcmRlcklkKXtpZihfd2FqYmF0aVRyYWNraW5nU2lnbmF0dXJlIT09JycpcGFpbnRUcmFja2luZyhudWxsKTtyZXR1cm47fQogIGlmKHRyYWNraW5nQnVzeSlyZXR1cm47CiAgdHJhY2tpbmdCdXN5PXRydWU7CiAgdHJ5ewogICAgY29uc3Qgaj1hd2FpdCBhcGlHZXQoJ29yZGVyJyx7aWQ6Y3VycmVudE9yZGVySWR9KTsKICAgIGNvbnN0IHNpZz1fd2FqYmF0aU9yZGVyU2lnbmF0dXJlKGoub3JkZXIpOwogICAgaWYoc2lnIT09X3dhamJhdGlUcmFja2luZ1NpZ25hdHVyZSlwYWludFRyYWNraW5nKGoub3JkZXIpOwogIH1jYXRjaHt9ZmluYWxseXt0cmFja2luZ0J1c3k9ZmFsc2V9Cn07Cg==').decode(); p.write_text(s if m in s else s+patch,encoding='utf-8')"
+      - name: Validate JavaScript
+        run: node --check app.js
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
