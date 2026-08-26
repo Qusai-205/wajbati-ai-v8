@@ -1,0 +1,87 @@
+from pathlib import Path
+
+shared = Path('shared.js')
+s = shared.read_text(encoding='utf-8')
+if 'WAJBATI_AGENT_V10_LIVE' not in s:
+    s = s.replace('const WajbatiAgent=(()=>{', 'let WajbatiAgent=(()=>{', 1)
+    s += r'''
+
+/* WAJBATI_AGENT_V10_LIVE */
+WajbatiAgent=((legacy)=>{
+  const norm=s=>String(s||'').toLowerCase().normalize('NFKD').replace(/[\u064B-\u065F\u0670]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/ؤ/g,'و').replace(/ئ/g,'ي').replace(/شورما/g,'شاورما').replace(/[^\u0600-\u06ffA-Za-z0-9\s.]/g,' ').replace(/\s+/g,' ').trim();
+  const en=s=>(String(s).match(/[A-Za-z]/g)||[]).length>(String(s).match(/[\u0600-\u06ff]/g)||[]).length;
+  const stop=new Set(['شو','ايش','اي','في','فيه','عندكم','عنكم','عندكو','عندك','هل','من','عن','على','الي','اللي','بدي','اريد','ممكن','لو','سمحت','please','do','you','have','what','is','are','the','a','an','your','menu']);
+  const groups=[['دجاج','جاج','فراخ','chicken'],['شاورما','shawarma','shawerma'],['سمك','سلمون','سالمون','fish','salmon'],['عصير','juice'],['لحمه','لحم','beef','meat'],['برغر','برجر','burger'],['رز','ارز','rice'],['قهوه','coffee'],['شاي','tea'],['حلو','حلويات','dessert','sweet'],['سلطه','سلطات','salad'],['مشروب','مشروبات','مشاريب','مشرايب','drink','drinks','beverage','beverages']];
+  const has=(q,ws)=>ws.some(w=>q.includes(norm(w)));
+  const words=s=>norm(s).split(' ').filter(Boolean);
+  const dist=(a,b)=>{const m=a.length,n=b.length,d=Array.from({length:m+1},()=>Array(n+1).fill(0));for(let i=0;i<=m;i++)d[i][0]=i;for(let j=0;j<=n;j++)d[0][j]=j;for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]};
+  const itemHay=x=>norm([x.name,x.englishName,x.aliases,x.description,x.ingredients,(x.allergens||[]).join(' '),x.category].filter(Boolean).join(' '));
+  function score(q,x){const hay=itemHay(x),hw=words(hay),qt=words(q).filter(w=>!stop.has(w)&&w.length>1);let sc=0;for(const t of qt){if(hay.includes(t))sc+=4;for(const g of groups.map(a=>a.map(norm))){if(g.includes(t)&&g.some(v=>hay.includes(v))){sc+=7;break}}if(t.length>=4&&hw.some(w=>Math.abs(w.length-t.length)<=1&&dist(w,t)<=1))sc+=2}if(q.includes(norm(x.name)))sc+=25;if(x.englishName&&q.includes(norm(x.englishName)))sc+=25;return sc}
+  function matches(q,menu){return menu.map(x=>[x,score(q,x)]).filter(a=>a[1]>=4).sort((a,b)=>b[1]-a[1]).map(a=>a[0])}
+  const line=(x,isEn)=>isEn?`• ${x.englishName||x.name} — ${WajbatiStore.money(x.price)} JOD • ${Number(x.calories||0)} kcal • ${Number(x.protein||0)}g protein`:`• ${x.name} — ${WajbatiStore.money(x.price)} د.أ • ${Number(x.calories||0)} سعرة • بروتين ${Number(x.protein||0)}غ`;
+  const list=(xs,isEn)=>xs.map(x=>line(x,isEn)).join('\n');
+  function itemAnswer(x,q,isEn){const n=isEn?(x.englishName||x.name):x.name;if(has(q,['سعر','price','cost','كم حقه','قديش']))return isEn?`${n} costs ${WajbatiStore.money(x.price)} JOD.`:`سعر ${n} هو ${WajbatiStore.money(x.price)} د.أ.`;if(has(q,['سعرات','كالوري','calorie','calories','kcal']))return isEn?`${n} has about ${Number(x.calories||0)} kcal.`:`${n} فيه تقريبًا ${Number(x.calories||0)} سعرة حرارية.`;if(has(q,['بروتين','protein']))return isEn?`${n} has ${Number(x.protein||0)} g protein.`:`${n} فيه ${Number(x.protein||0)} غ بروتين.`;if(has(q,['كرب','كربوهيدرات','carb','carbs']))return isEn?`${n} has ${Number(x.carbs||0)} g carbs.`:`${n} فيه ${Number(x.carbs||0)} غ كربوهيدرات.`;if(has(q,['دهون','fat','fats']))return isEn?`${n} has ${Number(x.fat||0)} g fat.`:`${n} فيه ${Number(x.fat||0)} غ دهون.`;if(has(q,['مكونات','مكون','ingredients','contains']))return isEn?`${n} ingredients: ${x.ingredients||'not listed yet.'}`:`مكونات ${n}: ${x.ingredients||'غير مسجلة بالتفصيل.'}`;if(has(q,['طبخ','تحضير','cooked','cooking','prepared']))return isEn?`${n} preparation: ${x.cookingMethod||'not listed yet.'}`:`طريقة تحضير ${n}: ${x.cookingMethod||'غير مسجلة.'}`;if(has(q,['تقديم','served','serving']))return isEn?`${n} serving style: ${x.servingStyle||'not listed yet.'}`:`طريقة تقديم ${n}: ${x.servingStyle||'غير مسجلة.'}`;if(has(q,['حساسيه','allergy','allergen']))return isEn?`${n} listed allergens: ${(x.allergens||[]).join(', ')||'none listed'}.`:`الحساسيات المسجلة في ${n}: ${(x.allergens||[]).join('، ')||'لا يوجد مسجل'}.`;return isEn?`${n}: ${x.description||''}\nPrice ${WajbatiStore.money(x.price)} JOD • ${Number(x.calories||0)} kcal • ${Number(x.protein||0)}g protein.`:`${n}: ${x.description||''}\nالسعر ${WajbatiStore.money(x.price)} د.أ • ${Number(x.calories||0)} سعرة • بروتين ${Number(x.protein||0)}غ.`}
+  return function(message,profile={}){const raw=String(message||'').trim();if(!raw)return 'اكتب سؤالك وأنا معك.';const q=norm(raw),isEn=en(raw),menu=WajbatiStore.getMenu().filter(x=>x.available);if(!menu.length)return isEn?'The menu is currently empty.':'المنيو فاضية حاليًا.';
+    if(has(q,['الاسعار','اسعاركم','prices','price list']))return isEn?`Current prices:\n${list([...menu].sort((a,b)=>a.price-b.price),true)}`:`هاي الأسعار الحالية:\n${list([...menu].sort((a,b)=>a.price-b.price),false)}`;
+    const isMeal=has(q,['وجبه','وجبة','طبق','اكل','meal']),scope=isMeal?menu.filter(x=>x.category==='main'):menu;
+    if(has(q,['ارخص','اقل سعر','اقل وجبه سعر','اقل وجبة سعر','cheapest','lowest price'])){const x=[...scope].sort((a,b)=>a.price-b.price)[0];return isEn?`The cheapest ${isMeal?'meal':'item'} is ${line(x,true).replace('• ','')}.`:`أرخص ${isMeal?'وجبة':'صنف'} عندنا حاليًا هي ${line(x,false).replace('• ','')}.`}
+    if(has(q,['اقل وجبه','اقل وجبة','lowest meal'])&&!has(q,['سعر','سعرات','كالوري','كرب','دهون','price','calorie','carb','fat'])){const mains=menu.filter(x=>x.category==='main'),cheap=[...mains].sort((a,b)=>a.price-b.price)[0],light=[...mains].sort((a,b)=>Number(a.calories||0)-Number(b.calories||0))[0];return isEn?`If you mean price: ${cheap?line(cheap,true).replace('• ',''):'none'}. If you mean calories: ${light?line(light,true).replace('• ',''):'none'}.`:`إذا قصدك بالسعر: ${cheap?line(cheap,false).replace('• ',''):'ما في'}. وإذا قصدك بالسعرات: ${light?line(light,false).replace('• ',''):'ما في'}.`}
+    if(has(q,['اقل سعرات','اقل كالوري','lowest calorie','lowest calories'])){const x=[...scope].sort((a,b)=>Number(a.calories||0)-Number(b.calories||0))[0];return isEn?`Lowest-calorie option: ${line(x,true).replace('• ','')}.`:`أقل خيار بالسعرات: ${line(x,false).replace('• ','')}.`}
+    if(has(q,['اعلى بروتين','اكثر بروتين','highest protein','most protein'])){const x=[...scope].sort((a,b)=>Number(b.protein||0)-Number(a.protein||0))[0];return isEn?`Highest-protein option: ${line(x,true).replace('• ','')}.`:`أعلى خيار بالبروتين: ${line(x,false).replace('• ','')}.`}
+    if(has(q,['اقل كرب','اقل كربوهيدرات','lowest carb','lowest carbs'])){const x=[...scope].sort((a,b)=>Number(a.carbs||0)-Number(b.carbs||0))[0];return isEn?`Lowest-carb option: ${line(x,true).replace('• ','')}.`:`أقل خيار بالكربوهيدرات: ${line(x,false).replace('• ','')}.`}
+    const cats=[['drinks',['مشروبات','مشاريب','مشرايب','drinks','beverages']],['desserts',['حلويات','desserts','sweets']],['appetizers',['مقبلات','appetizers','starters']],['salads',['سلطات','salads']],['main',['وجبات رئيسيه','وجبات رئيسية','اطباق رئيسيه','main dishes']]];for(const [id,keys] of cats)if(has(q,keys)){const xs=menu.filter(x=>x.category===id);return xs.length?(isEn?`Available now:\n${list(xs,true)}`:`المتوفر حاليًا:\n${list(xs,false)}`):(isEn?'Nothing is available in that section right now.':'ما في أصناف متاحة بهذا القسم حاليًا.')}
+    const ms=matches(q,menu);if(ms.length===1)return itemAnswer(ms[0],q,isEn);if(ms.length>1){const top=ms.slice(0,8);return isEn?`I found these matching items:\n${list(top,true)}`:`لقيت هاي الأصناف المطابقة لسؤالك:\n${list(top,false)}`}
+    if(has(q,['عندكم','عنكم','do you have','have you got'])){const cleaned=words(q).filter(w=>!stop.has(w)).join(' ');return isEn?`I couldn't find “${cleaned||raw}” in the live menu right now.`:`حسب المنيو الحية حاليًا، ما لقيت «${cleaned||raw}» ضمن الأصناف المتاحة.`}
+    return legacy(raw,profile)
+  }
+})(WajbatiAgent);
+'''
+    shared.write_text(s,encoding='utf-8')
+
+app = Path('app.js')
+a = app.read_text(encoding='utf-8')
+a = a.replace("async function ask(m){return WajbatiAgent(m,profile)}", "async function ask(m){await refreshRemote();return WajbatiAgent(m,profile)}")
+if 'WAJBATI_CANCEL_V10' not in a:
+    a += r'''
+
+/* WAJBATI_CANCEL_V10 */
+const _paintTrackingV10=paintTracking;
+paintTracking=function(o){
+  if(o&&o.status==='cancelled'){
+    const a=$('#customerTracking');
+    a.innerHTML=`<div class="customer-tracking-card cancelled-card"><div class="customer-tracking-head"><div><small>تتبع الطلب</small><h3>تم إلغاء الطلب</h3><p>طلب ${esc(o.id)} · طاولة ${esc(o.table)}</p></div><span class="status-pill cancelled">ملغي</span></div><div class="status-friendly-message"><span>↩️</span><div><b>تم تسجيل الإلغاء</b><p>لن يتم احتساب هذا الطلب ضمن المبيعات.</p></div></div><div class="cancellation-reason"><b>سبب الإلغاء</b><p>${esc(o.cancellationReason||'لم يُذكر سبب')}</p></div></div>`;
+    return;
+  }
+  _paintTrackingV10(o);
+  if(!o||o.status==='served')return;
+  const card=document.querySelector('#customerTracking .customer-tracking-card');if(!card||card.querySelector('.cancel-area'))return;
+  const box=document.createElement('div');box.className='cancel-area';box.innerHTML=`<button type="button" class="cancel-order-toggle">إلغاء الطلب</button><div class="cancel-order-box hidden"><h4>ليش بدك تلغي الطلب؟</h4><select class="cancel-reason"><option value="">اختر السبب</option><option>تأخر الطلب</option><option>بطلت أريده</option><option>طلبته بالخطأ</option><option>غيرت رأيي</option><option value="other">سبب آخر</option></select><textarea class="cancel-other hidden" maxlength="220" placeholder="اكتب السبب هنا"></textarea><button type="button" class="confirm-cancel">تأكيد إلغاء الطلب</button></div>`;card.appendChild(box);
+  const toggle=box.querySelector('.cancel-order-toggle'),panel=box.querySelector('.cancel-order-box'),sel=box.querySelector('.cancel-reason'),other=box.querySelector('.cancel-other'),confirmBtn=box.querySelector('.confirm-cancel');
+  toggle.onclick=()=>panel.classList.toggle('hidden');sel.onchange=()=>other.classList.toggle('hidden',sel.value!=='other');
+  confirmBtn.onclick=async()=>{let reason=sel.value==='other'?other.value.trim():sel.value;if(!reason){alert('اختر سبب الإلغاء أو اكتبه.');return}if(!confirm('متأكد إنك بدك تلغي الطلب؟'))return;confirmBtn.disabled=true;confirmBtn.textContent='جاري الإلغاء...';try{const j=await apiPost('cancel_order',{id:o.id,reason});paintTracking(j.order);$('#orderResult').innerHTML='<div class="notice cancellation-notice">تم إلغاء الطلب وتسجيل السبب بنجاح.</div>'}catch{alert('تعذّر إلغاء الطلب. جرّب مرة ثانية.')}finally{confirmBtn.disabled=false;confirmBtn.textContent='تأكيد إلغاء الطلب'}};
+};
+'''
+    app.write_text(a,encoding='utf-8')
+
+admin = Path('admin.js')
+d = admin.read_text(encoding='utf-8')
+d = d.replace("orders.filter(x=>x.createdAt?.slice(0,10)===day).length", "orders.filter(x=>x.createdAt?.slice(0,10)===day&&x.status!=='cancelled').length")
+if 'WAJBATI_ADMIN_CANCEL_V10' not in d:
+    d += r'''
+
+/* WAJBATI_ADMIN_CANCEL_V10 */
+renderOrders=function(){
+  const active=adminOrders.filter(o=>o.status!=='served'&&o.status!=='cancelled'),cancelled=adminOrders.filter(o=>o.status==='cancelled');
+  const statusName=s=>({submitted:'تم الاستلام',preparing:'قيد التحضير',ready:'جاهز',served:'تم التسليم',cancelled:'ملغي'}[s]||s),nextStatus=s=>({submitted:'preparing',preparing:'ready',ready:'served'}[s]);
+  const activeHtml=active.length?active.map(o=>`<article class="card order-card"><div><b>${esc(o.id)}</b><small>طاولة ${esc(o.table)}</small></div><div><b>${(o.items||[]).map(i=>`${i.qty}× ${esc(i.name)}`).join('، ')}</b><small>${WajbatiStore.money(o.total)} د.أ</small>${o.note?`<div class="kitchen-note"><span>📝 ملاحظة الزبون</span><strong>${esc(o.note)}</strong></div>`:''}</div><span class="status-pill ${o.status}">${statusName(o.status)}</span><div>${nextStatus(o.status)?`<button class="primary advance" data-id="${o.id}" data-status="${nextStatus(o.status)}">${statusName(nextStatus(o.status))}</button>`:''}</div></article>`).join(''):'<div class="notice">لا توجد طلبات نشطة.</div>';
+  const cancelledHtml=`<div class="orders-section-head cancelled-head"><h2>الطلبات الملغية</h2><span>${cancelled.length}</span></div>`+(cancelled.length?cancelled.map(o=>`<article class="card order-card cancelled-order"><div><b>${esc(o.id)}</b><small>طاولة ${esc(o.table)}</small></div><div><b>${(o.items||[]).map(i=>`${i.qty}× ${esc(i.name)}`).join('، ')}</b><small>${WajbatiStore.money(o.total)} د.أ · لا يُحتسب بالمبيعات</small><div class="cancel-admin-note"><span>سبب الإلغاء</span><strong>${esc(o.cancellationReason||'لم يُذكر سبب')}</strong>${o.cancelledAt?`<small>${new Date(o.cancelledAt).toLocaleString('ar-JO')}</small>`:''}</div></div><span class="status-pill cancelled">ملغي</span><div></div></article>`).join(''):'<div class="notice subtle">لا توجد طلبات ملغية.</div>');
+  $('#ordersList').innerHTML=activeHtml+cancelledHtml;document.querySelectorAll('.advance').forEach(b=>b.onclick=()=>advanceOrder(b.dataset.id,b.dataset.status));
+};
+'''
+    admin.write_text(d,encoding='utf-8')
+
+css = Path('styles.css')
+c = css.read_text(encoding='utf-8')
+if 'WAJBATI_CANCEL_UI_V10' not in c:
+    c += '''\n/* WAJBATI_CANCEL_UI_V10 */\n.status-pill.cancelled{background:#fde7e7;color:#8c2929}.cancel-area{margin-top:16px;padding-top:14px;border-top:1px solid #e7e1dd}.cancel-order-toggle{width:100%;border:1px solid #d9aaa5;background:#fff7f6;color:#923c35;border-radius:10px;padding:11px;cursor:pointer;font-weight:800}.cancel-order-box{margin-top:10px;padding:12px;border-radius:12px;background:#fff7f6;border:1px solid #efd0cc}.cancel-order-box h4{margin:0 0 8px}.cancel-order-box select,.cancel-order-box textarea{width:100%;margin:5px 0;border:1px solid #ddc7c4;border-radius:8px;padding:9px;font:inherit}.confirm-cancel{width:100%;border:0;background:#a94438;color:white;border-radius:8px;padding:10px;cursor:pointer;font-weight:800}.cancelled-card,.cancelled-order{border-color:#e7c1bd!important;background:#fffafa!important}.cancellation-reason,.cancel-admin-note{margin-top:10px;padding:10px;border-right:3px solid #b95047;background:#fff0ef;border-radius:8px}.cancel-admin-note span,.cancel-admin-note strong,.cancel-admin-note small{display:block;margin:3px 0}.orders-section-head{display:flex;align-items:center;justify-content:space-between;margin:24px 0 10px}.orders-section-head h2{margin:0}.orders-section-head span{background:#edf2ed;border-radius:999px;padding:4px 10px}.cancelled-head span{background:#fde7e7;color:#8c2929}.notice.subtle{background:#f8f8f6;color:#66716c}.cancellation-notice{border-color:#e7c1bd}\n'''
+    css.write_text(c,encoding='utf-8')
