@@ -2,7 +2,7 @@ WajbatiStore.init();
 const API='https://ywfajrnwyixficsjujfl.supabase.co/functions/v1/wajbati-api';
 let cart=[],profile={goal:'balance',avoid:''},currentOrderId=sessionStorage.getItem('wajbati.currentOrder')||'';
 let liveMenu=WajbatiStore.getMenu(),liveSettings=WajbatiStore.getSettings(),trackingBusy=false;
-const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function getJson(url,opts={}){const r=await fetch(url,opts);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP_${r.status}`);return j}
 async function apiGet(action,params={}){const u=new URL(API);u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));return getJson(u.toString())}
 async function apiPost(action,data={}){return getJson(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...data})})}
@@ -17,8 +17,48 @@ $('#chatForm').onsubmit=async e=>{e.preventDefault();const m=$('#chatInput').val
 const goalText={balance:'سأوازن بين السعرات والبروتين والكربوهيدرات.',muscle:'سأعطي أولوية للأعلى بروتين.',cut:'سأفضّل الخيارات الأخف بالسعرات.',keto:'سأعطي أولوية للأقل كربوهيدرات.'};
 function setGoal(g,announce=true){profile.goal=g;document.querySelectorAll('.goal').forEach(b=>b.classList.toggle('active',b.dataset.goal===g));$('#goalFeedback').textContent=goalText[g];if(announce)msg(`تمام، فعّلت هدف ${document.querySelector(`.goal[data-goal="${g}"] b`).textContent}. اسألني الآن وبحسبه لك على الهدف.`,'ai');setTimeout(()=>{document.querySelector('.chat').scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>$('#chatInput').focus(),450)},60)}
 document.querySelectorAll('.goal').forEach(b=>b.onclick=()=>setGoal(b.dataset.goal));$('#avoid').onchange=e=>profile.avoid=e.target.value;setGoal('balance',false);
-const statusNames={submitted:'تم استلام الطلب',preparing:'قيد التحضير',ready:'جاهز',served:'تم التسليم'},friendly={submitted:['🌿','صحة وعافية مقدمًا!','استلمنا طلبك بنجاح، وهلّق بنرتبه للمطبخ.'],preparing:['👨‍🍳','ما رح نطوّل عليك','الشيف شغّال على طلبك الآن.'],ready:['😋','طلبك صار جاهز','باقي يوصل لعند طاولتك.'],served:['❤️','صحة وهنا!','نتمنى تكون وجبتك على مزاجك.']},flow=['submitted','preparing','ready','served'];
-function paintTracking(o){const a=$('#customerTracking');if(!o){a.innerHTML='';return}const i=flow.indexOf(o.status),f=friendly[o.status]||['🍽️','طلبك معنا','تابع حالته من هنا'];a.innerHTML=`<div class="customer-tracking-card"><div class="customer-tracking-head"><div><small>تتبع الطلب</small><h3>${statusNames[o.status]||o.status}</h3><p>طلب ${o.id} · طاولة ${esc(o.table)}</p></div><span class="status-pill ${o.status}">${statusNames[o.status]||o.status}</span></div><div class="status-friendly-message"><span>${f[0]}</span><div><b>${f[1]}</b><p>${f[2]}</p></div></div>${o.note?`<div class="customer-order-note">📝 ${esc(o.note)}</div>`:''}<div class="customer-steps">${flow.map((s,n)=>`<div class="customer-step ${n<i?'done':n===i?'current':''}"><span>${n<i?'✓':n+1}</span><b>${statusNames[s]}</b></div>`).join('')}</div></div>`}
+const statusNames={submitted:'تم استلام الطلب',preparing:'قيد التحضير',ready:'جاهز',served:'تم التسليم',cancelled:'ملغي'},friendly={submitted:['🌿','صحة وعافية مقدمًا!','استلمنا طلبك بنجاح، وهلّق بنرتبه للمطبخ.'],preparing:['👨‍🍳','ما رح نطوّل عليك','الشيف شغّال على طلبك الآن.'],ready:['😋','طلبك صار جاهز','باقي يوصل لعند طاولتك.'],served:['❤️','صحة وهنا!','نتمنى تكون وجبتك على مزاجك.']},flow=['submitted','preparing','ready','served'];
+function cancellationUi(o){
+  if(!o||!['submitted','preparing'].includes(o.status))return'';
+  return `<div class="cancel-area"><button type="button" class="cancel-order-toggle">إلغاء الطلب</button><div class="cancel-order-box" hidden><h4>ليش بدك تلغي الطلب؟</h4><select class="cancel-reason"><option value="">اختر السبب</option><option value="تأخر الطلب">تأخر الطلب</option><option value="بطلت أريده">بطلت أريده</option><option value="طلبته بالخطأ">طلبته بالخطأ</option><option value="غيرت رأيي">غيرت رأيي</option><option value="other">سبب آخر</option></select><textarea class="cancel-other" hidden maxlength="220" placeholder="اكتب السبب هنا"></textarea><button type="button" class="confirm-cancel">تأكيد إلغاء الطلب</button></div></div>`;
+}
+function wireCancellation(o){
+  if(!o||!['submitted','preparing'].includes(o.status))return;
+  const root=$('#customerTracking');
+  const toggle=root.querySelector('.cancel-order-toggle'),panel=root.querySelector('.cancel-order-box'),sel=root.querySelector('.cancel-reason'),other=root.querySelector('.cancel-other'),confirmBtn=root.querySelector('.confirm-cancel');
+  if(!toggle||!panel||!sel||!other||!confirmBtn)return;
+  toggle.onclick=()=>{panel.hidden=!panel.hidden};
+  sel.onchange=()=>{other.hidden=sel.value!=='other';if(other.hidden)other.value=''};
+  confirmBtn.onclick=async()=>{
+    const reason=(sel.value==='other'?other.value:sel.value).trim();
+    if(!reason){alert('اختر سبب الإلغاء أو اكتبه.');return}
+    if(!window.confirm('متأكد إنك بدك تلغي الطلب؟'))return;
+    confirmBtn.disabled=true;confirmBtn.textContent='جاري الإلغاء...';
+    try{
+      const latest=await apiGet('order',{id:o.id});
+      if(!latest.order||!['submitted','preparing'].includes(latest.order.status)){
+        paintTracking(latest.order);
+        alert(latest.order?.status==='ready'?'الطلب صار جاهز، لذلك ما عاد ممكن إلغاؤه.':'ما عاد ممكن إلغاء هذا الطلب.');
+        return;
+      }
+      const j=await apiPost('cancel_order',{id:o.id,reason});
+      paintTracking(j.order);
+      $('#orderResult').innerHTML='<div class="notice cancellation-notice">تم إلغاء الطلب وتسجيل السبب بنجاح.</div>';
+    }catch(e){
+      await tracking();
+      alert(e.message==='ORDER_NOT_CANCELLABLE'?'ما عاد ممكن إلغاء الطلب بعد ما يصير جاهز.':'تعذّر إلغاء الطلب. جرّب مرة ثانية.');
+    }finally{confirmBtn.disabled=false;confirmBtn.textContent='تأكيد إلغاء الطلب'}
+  };
+}
+function paintTracking(o){
+  const a=$('#customerTracking');if(!o){a.innerHTML='';return}
+  if(o.status==='cancelled'){
+    a.innerHTML=`<div class="customer-tracking-card cancelled-card"><div class="customer-tracking-head"><div><small>تتبع الطلب</small><h3>تم إلغاء الطلب</h3><p>طلب ${esc(o.id)} · طاولة ${esc(o.table)}</p></div><span class="status-pill cancelled">ملغي</span></div><div class="status-friendly-message"><span>↩️</span><div><b>تم تسجيل الإلغاء</b><p>لن يتم احتساب هذا الطلب ضمن المبيعات.</p></div></div><div class="cancellation-reason"><b>سبب الإلغاء</b><p>${esc(o.cancellationReason||'لم يُذكر سبب')}</p></div></div>`;return;
+  }
+  const i=flow.indexOf(o.status),f=friendly[o.status]||['🍽️','طلبك معنا','تابع حالته من هنا'];
+  a.innerHTML=`<div class="customer-tracking-card"><div class="customer-tracking-head"><div><small>تتبع الطلب</small><h3>${statusNames[o.status]||o.status}</h3><p>طلب ${esc(o.id)} · طاولة ${esc(o.table)}</p></div><span class="status-pill ${o.status}">${statusNames[o.status]||o.status}</span></div><div class="status-friendly-message"><span>${f[0]}</span><div><b>${f[1]}</b><p>${f[2]}</p></div></div>${o.note?`<div class="customer-order-note">📝 ${esc(o.note)}</div>`:''}<div class="customer-steps">${flow.map((s,n)=>`<div class="customer-step ${n<i?'done':n===i?'current':''}"><span>${n<i?'✓':n+1}</span><b>${statusNames[s]}</b></div>`).join('')}</div>${cancellationUi(o)}</div>`;
+  wireCancellation(o);
+}
 async function tracking(){if(!currentOrderId){paintTracking(null);return}if(trackingBusy)return;trackingBusy=true;try{const j=await apiGet('order',{id:currentOrderId});paintTracking(j.order)}catch{}finally{trackingBusy=false}}
 async function submitOrder(table,note){const items=cart.map(x=>({id:x.id,name:x.name,category:x.category,qty:x.qty,price:x.price})),total=items.reduce((s,x)=>s+x.price*x.qty,0);const j=await apiPost('create_order',{order:{table,note,items,total}});return j.order}
 $('#submitOrder').onclick=async()=>{const table=$('#tableNo').value.trim(),note=$('#chefNote').value.trim();if(!table)return $('#orderResult').innerHTML='<div class="notice">أدخل رقم الطاولة أولًا.</div>';if(!cart.length)return $('#orderResult').innerHTML='<div class="notice">أضف صنفًا واحدًا على الأقل.</div>';const btn=$('#submitOrder');btn.disabled=true;btn.textContent='جاري الإرسال...';try{const o=await submitOrder(table,note);currentOrderId=o.id;sessionStorage.setItem('wajbati.currentOrder',o.id);cart=[];renderCart();$('#chefNote').value='';$('#noteCount').textContent='0/220';$('#orderResult').innerHTML=`<div class="notice">تم إرسال الطلب <b>${o.id}</b> للمطبخ. تقدر تتابع حالته تحت.</div>`;paintTracking(o);setTimeout(()=>$('#customerTracking').scrollIntoView({behavior:'smooth',block:'center'}),100)}catch{$('#orderResult').innerHTML='<div class="notice">تعذّر إرسال الطلب. جرّب مرة ثانية.</div>'}finally{btn.disabled=false;btn.textContent='إرسال الطلب للمطبخ'}};
@@ -26,19 +66,4 @@ $('#chefNote').oninput=e=>$('#noteCount').textContent=`${e.target.value.length}/
 document.querySelectorAll('[data-scroll]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.getElementById(b.dataset.scroll).scrollIntoView({behavior:'smooth',block:b.dataset.scroll==='cart'?'center':'start'})});
 (async()=>{await refreshRemote();renderMenu();renderCart();tracking();setInterval(tracking,1800);setInterval(async()=>{if(await refreshRemote())renderMenu()},10000)})();
 
-/* WAJBATI_CANCEL_V10 */
-const _paintTrackingV10=paintTracking;
-paintTracking=function(o){
-  if(o&&o.status==='cancelled'){
-    const a=$('#customerTracking');
-    a.innerHTML=`<div class="customer-tracking-card cancelled-card"><div class="customer-tracking-head"><div><small>تتبع الطلب</small><h3>تم إلغاء الطلب</h3><p>طلب ${esc(o.id)} · طاولة ${esc(o.table)}</p></div><span class="status-pill cancelled">ملغي</span></div><div class="status-friendly-message"><span>↩️</span><div><b>تم تسجيل الإلغاء</b><p>لن يتم احتساب هذا الطلب ضمن المبيعات.</p></div></div><div class="cancellation-reason"><b>سبب الإلغاء</b><p>${esc(o.cancellationReason||'لم يُذكر سبب')}</p></div></div>`;
-    return;
-  }
-  _paintTrackingV10(o);
-  if(!o||o.status==='served')return;
-  const card=document.querySelector('#customerTracking .customer-tracking-card');if(!card||card.querySelector('.cancel-area'))return;
-  const box=document.createElement('div');box.className='cancel-area';box.innerHTML=`<button type="button" class="cancel-order-toggle">إلغاء الطلب</button><div class="cancel-order-box hidden"><h4>ليش بدك تلغي الطلب؟</h4><select class="cancel-reason"><option value="">اختر السبب</option><option>تأخر الطلب</option><option>بطلت أريده</option><option>طلبته بالخطأ</option><option>غيرت رأيي</option><option value="other">سبب آخر</option></select><textarea class="cancel-other hidden" maxlength="220" placeholder="اكتب السبب هنا"></textarea><button type="button" class="confirm-cancel">تأكيد إلغاء الطلب</button></div>`;card.appendChild(box);
-  const toggle=box.querySelector('.cancel-order-toggle'),panel=box.querySelector('.cancel-order-box'),sel=box.querySelector('.cancel-reason'),other=box.querySelector('.cancel-other'),confirmBtn=box.querySelector('.confirm-cancel');
-  toggle.onclick=()=>panel.classList.toggle('hidden');sel.onchange=()=>other.classList.toggle('hidden',sel.value!=='other');
-  confirmBtn.onclick=async()=>{let reason=sel.value==='other'?other.value.trim():sel.value;if(!reason){alert('اختر سبب الإلغاء أو اكتبه.');return}if(!confirm('متأكد إنك بدك تلغي الطلب؟'))return;confirmBtn.disabled=true;confirmBtn.textContent='جاري الإلغاء...';try{const j=await apiPost('cancel_order',{id:o.id,reason});paintTracking(j.order);$('#orderResult').innerHTML='<div class="notice cancellation-notice">تم إلغاء الطلب وتسجيل السبب بنجاح.</div>'}catch{alert('تعذّر إلغاء الطلب. جرّب مرة ثانية.')}finally{confirmBtn.disabled=false;confirmBtn.textContent='تأكيد إلغاء الطلب'}};
-};
+/* WAJBATI_CANCEL_V11_READY_LOCK */
