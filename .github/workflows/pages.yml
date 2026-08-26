@@ -23,6 +23,38 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Stabilize customer cancellation controls
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.js')
+          s=p.read_text(encoding='utf-8')
+          marker='/* WAJBATI_STABLE_TRACKING_V11 */'
+          if marker not in s:
+              s += r'''
+
+/* WAJBATI_STABLE_TRACKING_V11 */
+let _wajbatiTrackingSignature='';
+const _wajbatiOrderSignature=o=>o?`${o.id||''}|${o.status||''}|${o.cancellationReason||''}|${o.cancelledAt||''}`:'';
+const _wajbatiPaintTrackingStable=paintTracking;
+paintTracking=function(o){
+  _wajbatiPaintTrackingStable(o);
+  _wajbatiTrackingSignature=_wajbatiOrderSignature(o);
+};
+tracking=async function(){
+  if(!currentOrderId){if(_wajbatiTrackingSignature!=='')paintTracking(null);return;}
+  if(trackingBusy)return;
+  trackingBusy=true;
+  try{
+    const j=await apiGet('order',{id:currentOrderId});
+    const sig=_wajbatiOrderSignature(j.order);
+    if(sig!==_wajbatiTrackingSignature)paintTracking(j.order);
+  }catch{}finally{trackingBusy=false}
+};
+'''
+              p.write_text(s,encoding='utf-8')
+          PY
+          node --check app.js
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
