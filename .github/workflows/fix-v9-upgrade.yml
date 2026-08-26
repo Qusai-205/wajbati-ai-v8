@@ -1,4 +1,4 @@
-name: Fix V9 upgrade decoder
+name: Apply Wajbati V9
 
 on:
   push:
@@ -6,27 +6,66 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   fix:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Fix base64 padding
+
+      - name: Extract tested V9 application files
         run: |
           python - <<'PY'
+          import base64, gzip, re
           from pathlib import Path
-          p=Path('.github/workflows/upgrade-v9-once.yml')
-          s=p.read_text()
-          old="gzip.decompress(base64.b64decode(encoded))"
-          new="gzip.decompress(base64.b64decode(encoded + '=' * (-len(encoded) % 4)))"
-          if old not in s:
-              raise SystemExit('decoder line not found')
-          p.write_text(s.replace(old,new),encoding='utf-8')
+          source=Path('.github/workflows/upgrade-v9-once.yml').read_text(encoding='utf-8')
+          for name in ('shared.js','app.js','admin.js'):
+              m=re.search(r"'"+re.escape(name)+r"': '''([A-Za-z0-9+/=]+)'''", source)
+              if not m:
+                  raise SystemExit(f'payload missing: {name}')
+              encoded=m.group(1)
+              raw=base64.b64decode(encoded + '=' * (-len(encoded) % 4))
+              Path(name).write_bytes(gzip.decompress(raw))
+          css=Path('styles.css')
+          marker='/* WAJBATI_CANCEL_UI_V9 */'
+          extra='''
+/* WAJBATI_CANCEL_UI_V9 */
+.status-pill.cancelled{background:#fde7e7;color:#8c2929}.cancel-area{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.cancel-order-toggle{width:100%;border:1px solid #d9aaa5;background:#fff7f6;color:#923c35;border-radius:9px;padding:10px;cursor:pointer;font-weight:750}.cancel-order-box{margin-top:10px;padding:12px;border-radius:12px;background:#fff7f6;border:1px solid #efd0cc}.cancel-order-box h4{margin:0 0 8px}.cancel-order-box select,.cancel-order-box textarea{width:100%;margin:5px 0;border:1px solid #ddc7c4;border-radius:8px;padding:9px;font:inherit}.confirm-cancel{width:100%;border:0;background:#a94438;color:#fff;border-radius:8px;padding:10px;cursor:pointer;font-weight:750}.cancelled-card,.cancelled-order{border-color:#e7c1bd;background:#fffafa}.cancellation-reason,.cancel-admin-note{margin-top:10px;padding:10px;border-right:3px solid #b95047;background:#fff0ef;border-radius:8px}.cancellation-reason p,.cancel-admin-note strong{margin:4px 0;display:block}.orders-section-head{display:flex;align-items:center;justify-content:space-between;margin:20px 0 10px}.orders-section-head h2{margin:0;font-size:22px}.orders-section-head span{background:#edf2ed;border-radius:999px;padding:4px 10px}.cancelled-head{margin-top:34px}.cancelled-head span{background:#fde7e7;color:#8c2929}.notice.subtle{background:#f8f8f6;color:#66716c}.cancellation-notice{border-color:#e7c1bd}
+'''
+          text=css.read_text(encoding='utf-8')
+          if marker not in text:
+              css.write_text(text+extra,encoding='utf-8')
           PY
+
+      - name: Validate application files
+        run: |
+          grep -q 'WAJBATI_AGENT_V9_LIVE' shared.js
+          grep -q 'cancel_order' app.js
+          grep -q 'cancellationReason' admin.js
+          node --check shared.js
+          node --check app.js
+          node --check admin.js
+
+      - name: Persist upgraded application files
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/upgrade-v9-once.yml
-          git commit -m "Fix V9 upgrade base64 padding"
+          git add shared.js app.js admin.js styles.css
+          git commit -m "Upgrade live agent and add customer cancellation" || true
           git push
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
