@@ -12,7 +12,7 @@ function renderMenu(){const menu=currentMenu();$('#menuSections').innerHTML=Wajb
 function addToCart(id){const x=liveMenu.find(i=>i.id===id);if(!x)return;const e=cart.find(i=>i.id===id);e?e.qty++:cart.push({...x,qty:1});renderCart();$('#cart').scrollIntoView({behavior:'smooth',block:'center'});$('#orderResult').innerHTML=`<div class="notice">تمت إضافة <b>${esc(x.name)}</b> إلى طلبك ✓</div>`}
 function renderCart(){$('#cartList').innerHTML=cart.length?cart.map(x=>`<div class="cart-item"><span>${esc(x.name)}</span><span class="qty"><button data-a="minus" data-id="${x.id}">−</button>${x.qty}<button data-a="plus" data-id="${x.id}">+</button></span><b>${WajbatiStore.money(x.price*x.qty)}</b></div>`).join(''):'<p class="muted">لم تضف أصنافًا بعد.</p>';$('#cartTotal').textContent=WajbatiStore.money(cart.reduce((s,x)=>s+x.price*x.qty,0));document.querySelectorAll('.qty button').forEach(b=>b.onclick=()=>{const x=cart.find(i=>i.id===b.dataset.id);if(!x)return;b.dataset.a==='plus'?x.qty++:x.qty--;cart=cart.filter(i=>i.qty>0);renderCart()})}
 function msg(t,type){const d=document.createElement('div');d.className='msg '+type;d.textContent=t;$('#messages').appendChild(d);$('#messages').scrollTop=$('#messages').scrollHeight}
-const history=[];async function ask(m){return WajbatiAgent(m,profile)}
+const history=[];async function ask(m){await refreshRemote();return WajbatiAgent(m,profile)}
 $('#chatForm').onsubmit=async e=>{e.preventDefault();const m=$('#chatInput').value.trim();if(!m)return;msg(m,'user');$('#chatInput').value='';const b=$('#chatForm button');b.disabled=true;b.textContent='...';try{const a=await ask(m);msg(a,'ai');history.push({role:'user',text:m},{role:'assistant',text:a})}catch{msg('صار خطأ بسيط. جرّب سؤالك مرة ثانية.','ai')}finally{b.disabled=false;b.textContent='إرسال'}};
 const goalText={balance:'سأوازن بين السعرات والبروتين والكربوهيدرات.',muscle:'سأعطي أولوية للأعلى بروتين.',cut:'سأفضّل الخيارات الأخف بالسعرات.',keto:'سأعطي أولوية للأقل كربوهيدرات.'};
 function setGoal(g,announce=true){profile.goal=g;document.querySelectorAll('.goal').forEach(b=>b.classList.toggle('active',b.dataset.goal===g));$('#goalFeedback').textContent=goalText[g];if(announce)msg(`تمام، فعّلت هدف ${document.querySelector(`.goal[data-goal="${g}"] b`).textContent}. اسألني الآن وبحسبه لك على الهدف.`,'ai');setTimeout(()=>{document.querySelector('.chat').scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>$('#chatInput').focus(),450)},60)}
@@ -25,3 +25,20 @@ $('#submitOrder').onclick=async()=>{const table=$('#tableNo').value.trim(),note=
 $('#chefNote').oninput=e=>$('#noteCount').textContent=`${e.target.value.length}/220`;
 document.querySelectorAll('[data-scroll]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.getElementById(b.dataset.scroll).scrollIntoView({behavior:'smooth',block:b.dataset.scroll==='cart'?'center':'start'})});
 (async()=>{await refreshRemote();renderMenu();renderCart();tracking();setInterval(tracking,1800);setInterval(async()=>{if(await refreshRemote())renderMenu()},10000)})();
+
+/* WAJBATI_CANCEL_V10 */
+const _paintTrackingV10=paintTracking;
+paintTracking=function(o){
+  if(o&&o.status==='cancelled'){
+    const a=$('#customerTracking');
+    a.innerHTML=`<div class="customer-tracking-card cancelled-card"><div class="customer-tracking-head"><div><small>تتبع الطلب</small><h3>تم إلغاء الطلب</h3><p>طلب ${esc(o.id)} · طاولة ${esc(o.table)}</p></div><span class="status-pill cancelled">ملغي</span></div><div class="status-friendly-message"><span>↩️</span><div><b>تم تسجيل الإلغاء</b><p>لن يتم احتساب هذا الطلب ضمن المبيعات.</p></div></div><div class="cancellation-reason"><b>سبب الإلغاء</b><p>${esc(o.cancellationReason||'لم يُذكر سبب')}</p></div></div>`;
+    return;
+  }
+  _paintTrackingV10(o);
+  if(!o||o.status==='served')return;
+  const card=document.querySelector('#customerTracking .customer-tracking-card');if(!card||card.querySelector('.cancel-area'))return;
+  const box=document.createElement('div');box.className='cancel-area';box.innerHTML=`<button type="button" class="cancel-order-toggle">إلغاء الطلب</button><div class="cancel-order-box hidden"><h4>ليش بدك تلغي الطلب؟</h4><select class="cancel-reason"><option value="">اختر السبب</option><option>تأخر الطلب</option><option>بطلت أريده</option><option>طلبته بالخطأ</option><option>غيرت رأيي</option><option value="other">سبب آخر</option></select><textarea class="cancel-other hidden" maxlength="220" placeholder="اكتب السبب هنا"></textarea><button type="button" class="confirm-cancel">تأكيد إلغاء الطلب</button></div>`;card.appendChild(box);
+  const toggle=box.querySelector('.cancel-order-toggle'),panel=box.querySelector('.cancel-order-box'),sel=box.querySelector('.cancel-reason'),other=box.querySelector('.cancel-other'),confirmBtn=box.querySelector('.confirm-cancel');
+  toggle.onclick=()=>panel.classList.toggle('hidden');sel.onchange=()=>other.classList.toggle('hidden',sel.value!=='other');
+  confirmBtn.onclick=async()=>{let reason=sel.value==='other'?other.value.trim():sel.value;if(!reason){alert('اختر سبب الإلغاء أو اكتبه.');return}if(!confirm('متأكد إنك بدك تلغي الطلب؟'))return;confirmBtn.disabled=true;confirmBtn.textContent='جاري الإلغاء...';try{const j=await apiPost('cancel_order',{id:o.id,reason});paintTracking(j.order);$('#orderResult').innerHTML='<div class="notice cancellation-notice">تم إلغاء الطلب وتسجيل السبب بنجاح.</div>'}catch{alert('تعذّر إلغاء الطلب. جرّب مرة ثانية.')}finally{confirmBtn.disabled=false;confirmBtn.textContent='تأكيد إلغاء الطلب'}};
+};
